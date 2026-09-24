@@ -7,11 +7,12 @@ looks for problems at the end.
 
 ## Build, test, run
 
-Needs Java 25 and Maven.
+Needs Java 25 and Maven. Built on Spring Boot 4.1.
 
 ```sh
 mvn test                     # run the tests
 mvn -q spring-boot:run       # run the simulation
+mvn -q spring-boot:run -Dspring-boot.run.arguments=--banksim.position-failure-rate=0.9
 ```
 
 ## How it runs
@@ -28,15 +29,29 @@ bank threads (3, fixed pool)          processor threads (1 per queue)
 - The banks and the queue processors run at the same time.
 - Shared state is the two queues (`LinkedBlockingQueue`), the audit log and the dead letter queue (both
   `synchronized`, readers get a copy), and the topic's routing map (built before any thread starts, then only read).
-- Shutdown uses a poison pill. `Main` closes the sender pool, which waits for every send. Then it puts
+- Shutdown uses a poison pill. `Simulation` closes the sender pool, which waits for every send. Then it puts
   `SQSQueue.POISON` on each queue and joins the processor threads. Each processor stops when it takes the pill.
   The pills are pushed from a `finally` block, so an error partway through cannot leave the program hanging.
 - Reconciliation runs on `main` after every other thread has stopped.
 
+## Spring Boot
+
+Spring only builds the objects and starts the run; the threads, queues and poison pill are unchanged.
+
+- `PipelineConfig` builds every object with `@Bean` methods. The pipeline classes have no Spring annotations, so all
+  the wiring is in one file and the unit tests construct them directly. The two queues and two processors share a
+  type, so they are injected by name with `@Qualifier`.
+- The failure rates are set in `application.yml` under `banksim.*` and bound to `SimulatorProperties`. A missing or
+  out-of-range rate stops the app at startup.
+- `Simulation` is a `CommandLineRunner`: Spring calls it once the objects are built. With no web server and no
+  threads left when it returns, the app exits.
+- `SimulationNoFailuresTest` and `SimulationPositionFailuresTest` start the real application with fixed rates and
+  check the audit log and dead letter queue afterwards.
+
 ## Things that differ from the Python version
 
-- No singletons. `Main` builds one `AuditLog`, `DeadLetterQueue` and `TopicMessageProcessor` and passes them in
-  through constructors.
+- No singletons. Spring builds one `AuditLog`, `DeadLetterQueue` and `TopicMessageProcessor` (see `PipelineConfig`)
+  and passes them in through constructors.
 - One `Bank` class instead of one subclass per bank. The subclasses were identical; they come back when a bank's
   behavior actually differs.
 - `Message` is an immutable record with no outcome field. The outcome lives only in the audit log.
@@ -56,4 +71,4 @@ fires.
 
 ## Next
 
-Phase 2 converts this to Spring Boot. The constructor injection here maps directly onto Spring's container.
+Phase 3 is persistence and a REST entry point; microservices after that.

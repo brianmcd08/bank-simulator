@@ -95,3 +95,30 @@ Other calls made during review
 
 Diff 1 (this commit): pom.xml, .gitignore, EventType, Outcome, Banks, Message, and tests.
 No concurrency yet. The queue processors are next and are written by hand.
+
+
+----------------------------------------------------------------------
+Phase 2: Spring Boot (settled 2026-09-24)
+----------------------------------------------------------------------
+
+Scope: container only. Spring builds and wires the objects and starts the run. Threads, queues, the poison pill
+and shutdown are unchanged. REST, persistence, @Async and logging are later.
+
+1. Versions. Spring Boot 4.1.1 as the parent. It brings Jackson 3 (tools.jackson, unchecked JacksonException,
+   stringValue(null) in place of textValue()) and JUnit 6. spring-boot-maven-plugin replaces exec-maven-plugin.
+
+2. Wiring. One @Configuration class, PipelineConfig, with a @Bean method per object. The pipeline classes stay
+   plain Java with no annotations, so the wiring is in one place and the unit tests are untouched. Two SQSQueues
+   and two QueueMessageProcessors share a type, so they are named beans injected with @Qualifier. The JsonMapper
+   comes from Boot's Jackson auto-configuration.
+
+3. Configuration. banksim.position-failure-rate and banksim.payment-failure-rate in application.yml, bound to the
+   SimulatorProperties record. Boxed Double so a missing value fails at startup instead of silently becoming 0.
+
+4. Running. Simulation implements CommandLineRunner and holds what Main.run did. Spring runs it after the context
+   is built; with no web server and no live threads the JVM exits when it returns. Main is gone;
+   BankSimulatorApplication has main().
+
+5. Tests. Unit tests unchanged. Two @SpringBootTest classes start the real application with fixed rates (0/0 and
+   1/0). The runner runs during context startup, so the tests assert on the AuditLog and DeadLetterQueue beans
+   afterwards. One run per context: a second run in the same context would add to the same audit log.

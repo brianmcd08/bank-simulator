@@ -32,7 +32,7 @@ class TopicMessageProcessorTest {
 
     @Test
     void validMessageIsPublishedToItsQueue() throws InterruptedException {
-        processor.process(Main.WF_POSITION);
+        processor.process(SampleMessages.WF_POSITION);
 
         Message message = positions.poll(Duration.ofSeconds(1));
         assertNotNull(message);
@@ -45,7 +45,7 @@ class TopicMessageProcessorTest {
 
     @Test
     void invalidBankIsAuditedWithItsFields() {
-        processor.process(Main.INVALID_BANK);
+        processor.process(SampleMessages.INVALID_BANK);
 
         AuditEntry entry = onlyRejection();
         assertEquals("unknown_999", entry.bankId());
