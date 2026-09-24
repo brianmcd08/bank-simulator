@@ -1,5 +1,6 @@
 package com.bankcorp.banksim;
 
+import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -10,7 +11,7 @@ import java.util.concurrent.Executors;
  *
  * <p>Shutdown: the sender pool is closed, which waits for every send to finish. Only then does each queue get a
  * poison pill, and main joins the processor threads. The pills go in from a finally block, so an exception partway
- * through cannot leave the processors waiting forever.
+ * through cannot leave the processors waiting forever. Reconciliation runs on main after everything has stopped.
  */
 public class Main {
 
@@ -44,6 +45,10 @@ public class Main {
         result.auditLog().entries().forEach(e -> System.out.println("  " + e));
         System.out.println("Dead letter queue (" + result.dlq().messages().size() + " messages):");
         result.dlq().messages().forEach(m -> System.out.println("  " + m));
+
+        System.out.println();
+        System.out.println("Reconciliation:");
+        new ReconciliationEngine(result.auditLog(), Clock.systemUTC()).reconcile();
     }
 
     static Result run(FailurePolicy positionPolicy, FailurePolicy paymentPolicy) throws InterruptedException {
