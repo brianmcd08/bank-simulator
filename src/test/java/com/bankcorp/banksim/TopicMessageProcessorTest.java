@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import tools.jackson.databind.json.JsonMapper;
 
 class TopicMessageProcessorTest {
 
@@ -26,7 +27,7 @@ class TopicMessageProcessorTest {
         topic.registerQueue(positions, EventType.POSITION_UPDATE);
         topic.registerQueue(payments, EventType.PAYMENT);
         auditLog = new AuditLog();
-        processor = new TopicMessageProcessor(topic, auditLog);
+        processor = new TopicMessageProcessor(JsonMapper.shared(), topic, auditLog);
     }
 
     @Test

@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Runs the simulation. Each bank sends on its own thread while one processor thread per queue consumes.
@@ -61,7 +62,7 @@ public class Main {
 
         AuditLog auditLog = new AuditLog();
         DeadLetterQueue dlq = new DeadLetterQueue();
-        TopicMessageProcessor topicProcessor = new TopicMessageProcessor(topic, auditLog);
+        TopicMessageProcessor topicProcessor = new TopicMessageProcessor(JsonMapper.shared(), topic, auditLog);
 
         Thread positionProcessor = Thread.ofPlatform().name("qmp-position")
                 .start(new QueueMessageProcessor(positionQueue, positionPolicy, dlq, auditLog));

@@ -11,7 +11,7 @@ Needs Java 25 and Maven.
 
 ```sh
 mvn test                     # run the tests
-mvn -q compile exec:java     # run the simulation
+mvn -q spring-boot:run       # run the simulation
 ```
 
 ## How it runs

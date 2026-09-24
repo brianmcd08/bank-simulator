@@ -1,26 +1,27 @@
 package com.bankcorp.banksim;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Objects;
 import java.util.UUID;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Parses raw JSON from the banks, rejects what it cannot use, and publishes the rest to the topic.
- * Called from several bank threads at once, so it keeps no per-call state. The ObjectMapper is safe to share once
- * built.
+ * Called from several bank threads at once, so it keeps no per-call state. The JsonMapper is immutable and safe to
+ * share.
  *
  * <p>Every rejection is audited as PERMANENT_FAILURE and process never throws. The Python version retried a
  * failed parse three times, but parsing the same string again always fails the same way, so there is no retry.
  */
 public class TopicMessageProcessor {
 
-    private final ObjectMapper mapper = new ObjectMapper();
+    private final JsonMapper mapper;
     private final SNSTopic topic;
     private final AuditLog auditLog;
 
-    public TopicMessageProcessor(SNSTopic topic, AuditLog auditLog) {
+    public TopicMessageProcessor(JsonMapper mapper, SNSTopic topic, AuditLog auditLog) {
+        this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.topic = Objects.requireNonNull(topic, "topic");
         this.auditLog = Objects.requireNonNull(auditLog, "auditLog");
     }
@@ -29,16 +30,16 @@ public class TopicMessageProcessor {
         JsonNode root;
         try {
             root = mapper.readTree(raw == null ? "" : raw);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             reject(null, null, null, "unparseable JSON");
             return;
         }
 
-        // textValue() is null for a missing field, a JSON null, or a non-string value. asText() would turn a JSON
-        // null into the string "null".
-        String bankId = root.path("bank_id").textValue();
-        String loanId = root.path("loan_id").textValue();
-        String eventTypeName = root.path("event_type").textValue();
+        // stringValue(null) is null for a missing field, a JSON null, or a non-string value. asString() would turn
+        // a JSON null into the string "null".
+        String bankId = root.path("bank_id").stringValue(null);
+        String loanId = root.path("loan_id").stringValue(null);
+        String eventTypeName = root.path("event_type").stringValue(null);
         if (bankId == null || loanId == null || eventTypeName == null) {
             reject(null, bankId, loanId, "missing field");
             return;
