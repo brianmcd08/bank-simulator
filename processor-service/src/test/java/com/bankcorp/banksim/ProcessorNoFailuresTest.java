@@ -19,7 +19,7 @@ import org.springframework.test.annotation.DirtiesContext;
 @SpringBootTest(
         webEnvironment = WebEnvironment.RANDOM_PORT,
         properties = {
-                "banksim.position-failure-rate=0", "banksim.payment-failure-rate=0", "banksim.reconciliation-url="})
+                "banksim.position-failure-rate=0", "banksim.payment-failure-rate=0", "banksim.publish-outcomes=false"})
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class ProcessorNoFailuresTest {
 

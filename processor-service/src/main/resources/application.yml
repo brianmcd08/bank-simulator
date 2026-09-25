@@ -2,13 +2,16 @@ server:
   port: 8081
 
 banksim:
-  # Where outcomes are pushed. Leave empty to keep them in this service only.
-  reconciliation-url: http://localhost:8082
+  # Publish outcomes to the broker for the reconciliation service. false keeps them in this service only.
+  publish-outcomes: true
   # Chance, from 0 to 1, that one processing attempt fails. Each message gets 3 attempts.
   position-failure-rate: 0.4
   payment-failure-rate: 0.3
 
 spring:
+  rabbitmq:
+    host: localhost
+    port: 5672
   main:
     banner-mode: off
     log-startup-info: false

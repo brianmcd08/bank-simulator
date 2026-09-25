@@ -7,15 +7,18 @@ looks for problems at the end.
 
 ## Build, test, run
 
-Needs Java 25 and Maven. Built on Spring Boot 4.1.
+Needs Java 25, Maven and Docker. Built on Spring Boot 4.1.
 
 The project is split into three separately deployable services (see "Microservices split" below):
 `processor-service` on port 8081, `reconciliation-service` on port 8082, and `bank-service`, which sends the sample
 messages to the processor and exits.
 
 ```sh
-mvn test                                         # run every module's tests
-mvn -q -pl reconciliation-service spring-boot:run   # start reconciliation; Ctrl+C stops it
+docker run -d --name rabbit -p 5672:5672 -p 15672:15672 rabbitmq:4-management   # the broker, once
+docker start rabbit                              # afterwards; UI at localhost:15672, guest/guest
+
+mvn test                                         # run every module's tests (no broker needed)
+mvn -q -pl reconciliation-service spring-boot:run   # start reconciliation first once, so its queue exists
 mvn -q -pl processor-service spring-boot:run     # start the processor; Ctrl+C stops it
 mvn -q -pl bank-service spring-boot:run          # send every bank's messages; exit code 1 if any were given up on
 
@@ -47,9 +50,10 @@ POST /messages                        processor threads (1 per queue)
 - `PipelineLifecycle` starts the queue processor threads with the service and, at shutdown, puts `SQSQueue.POISON`
   on each queue and joins them. Its phase is just below the web server's, so the threads are running before the
   first request and the pills go in only after the server has stopped taking requests.
-- Every audit entry except `DUPLICATE` is pushed to the reconciliation service by `OutcomePublisher`, on its own
-  thread, once (fire-and-forget). Accepted messages are audited `PENDING` first, so a message's outcomes arrive as
-  `PENDING`, then its final outcome.
+- Every audit entry except `DUPLICATE` is published by `OutcomePublisher`, on its own thread, to the
+  `banksim.outcomes` exchange on RabbitMQ. The reconciliation service binds its durable `reconciliation.outcomes`
+  queue to it and takes outcomes with `OutcomeListener`. Accepted messages are audited `PENDING` first, so a
+  message's outcomes arrive as `PENDING`, then its final outcome.
 
 ## Spring Boot
 
@@ -123,5 +127,16 @@ The goal is three separately deployable services, each owning its own data and t
   - Known limitations: an outcome pushed while reconciliation is down is lost for good, and reconciliation cannot
     tell, so its report looks clean. Its store is in memory. `duplicateMessages` still keys on bank + loan + event
     type, so it flags `BOA_PAYMENT_DUPLICATE`, a genuine second payment, for a person to check.
+- Slice 4 (done): a real queue between the processor and reconciliation.
+  - Outcomes go through RabbitMQ instead of an HTTP push. While reconciliation is down they wait in its durable
+    queue and arrive when it starts again, so a stopped reconciliation service no longer loses outcomes.
+  - Reconciliation acknowledges after storing (`acknowledge-mode: auto`), so a failure before the acknowledgement
+    means redelivery (at-least-once). `OutcomeStore` keeps one entry per message id, so a redelivery has no
+    further effect. With `acknowledge-mode: none` a failure while handling loses the outcome; `stuckInPending`
+    then reports the message.
+  - `banksim.chaos.fail-once-for-loan` and `banksim.chaos.fail-point` (`BEFORE_STORE` or `AFTER_STORE`) make the
+    listener throw once for that loan's first final outcome, standing in for a crash.
+  - Known limitations: a publish is one attempt with no publisher confirms, so an outcome is lost if the broker is
+    down or no queue is bound yet (start reconciliation once before the first run). The broker is now required.
 - The services share no code. `Banks` exists in both; the processor's copy validates bank ids. `SampleMessages` is
   the bank service's data and a test fixture in the processor.

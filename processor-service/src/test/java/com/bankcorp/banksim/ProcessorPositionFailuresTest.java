@@ -13,7 +13,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 @SpringBootTest(
         webEnvironment = WebEnvironment.RANDOM_PORT,
         properties = {
-                "banksim.position-failure-rate=1", "banksim.payment-failure-rate=0", "banksim.reconciliation-url="})
+                "banksim.position-failure-rate=1", "banksim.payment-failure-rate=0", "banksim.publish-outcomes=false"})
 class ProcessorPositionFailuresTest {
 
     @LocalServerPort
