@@ -1,0 +1,10 @@
+banksim:
+  # Where the processor service listens.
+  processor-url: http://localhost:8081
+  # Wait before the first retry when the processor cannot be reached. It doubles each retry, up to 5 attempts.
+  first-retry-wait: 1s
+
+spring:
+  main:
+    banner-mode: off
+    log-startup-info: false
