@@ -9,44 +9,53 @@ looks for problems at the end.
 
 Needs Java 25 and Maven. Built on Spring Boot 4.1.
 
+The project is being split into separately deployable services (see "Microservices split" below). So far there is
+one module, `processor-service`, which runs as a web server on port 8081.
+
 ```sh
-mvn test                     # run the tests
-mvn -q spring-boot:run       # run the simulation
-mvn -q spring-boot:run -Dspring-boot.run.arguments=--banksim.position-failure-rate=0.9
+mvn test                                         # run every module's tests
+mvn -q -pl processor-service spring-boot:run     # start the processor; Ctrl+C stops it
+
+curl -i -H 'Content-Type: application/json' \
+  -d '{"bank_id":"wf_1334566","loan_id":"loan_002","event_type":"POSITION_UPDATE"}' \
+  localhost:8081/messages                        # 202 Accepted
+curl -s localhost:8081/audit                     # also /dlq and /reconcile
 ```
 
 ## How it runs
 
 ```
-bank threads (3, fixed pool)          processor threads (1 per queue)
-  Bank.send(json)                        QueueMessageProcessor.run()
+POST /messages                        processor threads (1 per queue)
+  MessageController.receive(json)        QueueMessageProcessor.run()
     -> TopicMessageProcessor               take() -> up to 3 attempts
          validate, audit rejections          -> SUCCESS, or DLQ
          -> SNSTopic.publish                 -> AuditLog
               -> SQSQueue  ------------------^
 ```
 
-- The banks and the queue processors run at the same time.
+- `POST /messages` returns 202 once the message is queued. A queue processor handles it afterwards, so the outcome
+  does not exist yet when the reply goes back. Rejected messages also get 202, because `process()` does not report
+  rejections.
+- Tomcat's request threads and the queue processors run at the same time.
 - Shared state is the two queues (`LinkedBlockingQueue`), the audit log and the dead letter queue (both
   `synchronized`, readers get a copy), and the topic's routing map (built before any thread starts, then only read).
-- Shutdown uses a poison pill. `Simulation` closes the sender pool, which waits for every send. Then it puts
-  `SQSQueue.POISON` on each queue and joins the processor threads. Each processor stops when it takes the pill.
-  The pills are pushed from a `finally` block, so an error partway through cannot leave the program hanging.
-- Reconciliation runs on `main` after every other thread has stopped.
+- `PipelineLifecycle` starts the queue processor threads with the service and, at shutdown, puts `SQSQueue.POISON`
+  on each queue and joins them. Its phase is just below the web server's, so the threads are running before the
+  first request and the pills go in only after the server has stopped taking requests.
+- Reconciliation still runs in-process, on demand, through `GET /reconcile`.
 
 ## Spring Boot
 
-Spring only builds the objects and starts the run; the threads, queues and poison pill are unchanged.
+Spring builds the objects, runs the web server and starts and stops the queue processor threads.
 
 - `PipelineConfig` builds every object with `@Bean` methods. The pipeline classes have no Spring annotations, so all
   the wiring is in one file and the unit tests construct them directly. The two queues and two processors share a
   type, so they are injected by name with `@Qualifier`.
 - The failure rates are set in `application.yml` under `banksim.*` and bound to `SimulatorProperties`. A missing or
   out-of-range rate stops the app at startup.
-- `Simulation` is a `CommandLineRunner`: Spring calls it once the objects are built. With no web server and no
-  threads left when it returns, the app exits.
-- `SimulationNoFailuresTest` and `SimulationPositionFailuresTest` start the real application with fixed rates and
-  check the audit log and dead letter queue afterwards.
+- `ProcessorNoFailuresTest` and `ProcessorPositionFailuresTest` start the real service on a random port with fixed
+  rates, send the sample messages over HTTP, and check the audit log and dead letter queue once every message has
+  an outcome.
 
 ## Things that differ from the Python version
 
@@ -69,6 +78,11 @@ the same time, so the order of audit entries also changes. That changes which en
 "Stuck in pending" is kept from the Python version, but nothing writes `PENDING` to the audit log yet, so it never
 fires.
 
-## Next
+## Microservices split
 
-Phase 3 is persistence and a REST entry point; microservices after that.
+The goal is three separately deployable services, each owning its own data and talking over HTTP or a real queue:
+`bank-service`, `processor-service` and `reconciliation-service`. It is built in slices, one commit each on the
+`microservices-split` branch.
+
+- Slice 0 (done): multi-module build; the processor runs as a web server. `Bank` and `SampleMessages` are parked in
+  the processor until the bank service exists.

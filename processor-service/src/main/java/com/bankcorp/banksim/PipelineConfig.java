@@ -77,13 +77,10 @@ public class PipelineConfig {
     }
 
     @Bean
-    Simulation simulation(TopicMessageProcessor topicMessageProcessor,
-                          @Qualifier("positionQueue") SQSQueue positionQueue,
-                          @Qualifier("paymentQueue") SQSQueue paymentQueue,
-                          @Qualifier("positionProcessor") QueueMessageProcessor positionProcessor,
-                          @Qualifier("paymentProcessor") QueueMessageProcessor paymentProcessor,
-                          AuditLog auditLog, DeadLetterQueue dlq, ReconciliationEngine reconciliationEngine) {
-        return new Simulation(topicMessageProcessor, positionQueue, paymentQueue, positionProcessor, paymentProcessor,
-                auditLog, dlq, reconciliationEngine);
+    PipelineLifecycle pipelineLifecycle(@Qualifier("positionQueue") SQSQueue positionQueue,
+                                        @Qualifier("paymentQueue") SQSQueue paymentQueue,
+                                        @Qualifier("positionProcessor") QueueMessageProcessor positionProcessor,
+                                        @Qualifier("paymentProcessor") QueueMessageProcessor paymentProcessor) {
+        return new PipelineLifecycle(positionQueue, paymentQueue, positionProcessor, paymentProcessor);
     }
 }
