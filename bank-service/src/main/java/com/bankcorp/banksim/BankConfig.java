@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestClient;
+import tools.jackson.databind.json.JsonMapper;
 
 @Configuration
 public class BankConfig {
@@ -16,7 +17,8 @@ public class BankConfig {
     }
 
     @Bean
-    SendRun sendRun(RestClient processorClient, @Value("${banksim.first-retry-wait}") Duration firstWait) {
-        return new SendRun(processorClient, firstWait);
+    SendRun sendRun(RestClient processorClient, JsonMapper jsonMapper,
+                    @Value("${banksim.first-retry-wait}") Duration firstWait) {
+        return new SendRun(processorClient, jsonMapper, firstWait);
     }
 }

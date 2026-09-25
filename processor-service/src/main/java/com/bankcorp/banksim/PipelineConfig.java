@@ -48,8 +48,14 @@ public class PipelineConfig {
     }
 
     @Bean
-    TopicMessageProcessor topicMessageProcessor(JsonMapper jsonMapper, SNSTopic snsTopic, AuditLog auditLog) {
-        return new TopicMessageProcessor(jsonMapper, snsTopic, auditLog);
+    SeenMessageIds seenMessageIds() {
+        return new SeenMessageIds();
+    }
+
+    @Bean
+    TopicMessageProcessor topicMessageProcessor(JsonMapper jsonMapper, SNSTopic snsTopic, AuditLog auditLog,
+                                                SeenMessageIds seenMessageIds) {
+        return new TopicMessageProcessor(jsonMapper, snsTopic, auditLog, seenMessageIds);
     }
 
     @Bean
@@ -74,6 +80,11 @@ public class PipelineConfig {
     @Bean
     ReconciliationEngine reconciliationEngine(AuditLog auditLog, Clock clock) {
         return new ReconciliationEngine(auditLog, clock);
+    }
+
+    @Bean
+    ReplyChaos replyChaos(ChaosProperties chaosProperties, JsonMapper jsonMapper) {
+        return new ReplyChaos(chaosProperties, jsonMapper);
     }
 
     @Bean

@@ -13,26 +13,30 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>Every rejection is audited as PERMANENT_FAILURE and process never throws. The Python version retried a
  * failed parse three times, but parsing the same string again always fails the same way, so there is no retry.
+ *
+ * <p>The message id comes from the bank, which creates it once and sends the same id on every retry. A message whose
+ * id was already accepted is audited as DUPLICATE and not published again, so a resend has no further effect.
  */
 public class TopicMessageProcessor {
 
     private final JsonMapper mapper;
     private final SNSTopic topic;
     private final AuditLog auditLog;
+    private final SeenMessageIds seenIds;
 
-    public TopicMessageProcessor(JsonMapper mapper, SNSTopic topic, AuditLog auditLog) {
+    public TopicMessageProcessor(JsonMapper mapper, SNSTopic topic, AuditLog auditLog, SeenMessageIds seenIds) {
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.topic = Objects.requireNonNull(topic, "topic");
         this.auditLog = Objects.requireNonNull(auditLog, "auditLog");
+        this.seenIds = Objects.requireNonNull(seenIds, "seenIds");
     }
 
-    public void process(String raw) {
+    public Receipt process(String raw) {
         JsonNode root;
         try {
             root = mapper.readTree(raw == null ? "" : raw);
         } catch (JacksonException e) {
-            reject(null, null, null, "unparseable JSON");
-            return;
+            return reject(null, null, null, "unparseable JSON");
         }
 
         // stringValue(null) is null for a missing field, a JSON null, or a non-string value. asString() would turn
@@ -40,31 +44,39 @@ public class TopicMessageProcessor {
         String bankId = root.path("bank_id").stringValue(null);
         String loanId = root.path("loan_id").stringValue(null);
         String eventTypeName = root.path("event_type").stringValue(null);
-        if (bankId == null || loanId == null || eventTypeName == null) {
-            reject(null, bankId, loanId, "missing field");
-            return;
+        String messageId = root.path("message_id").stringValue(null);
+        if (bankId == null || loanId == null || eventTypeName == null || messageId == null) {
+            return reject(null, bankId, loanId, "missing field");
         }
 
         EventType eventType;
         try {
             eventType = EventType.valueOf(eventTypeName);
         } catch (IllegalArgumentException e) {
-            reject(null, bankId, loanId, "unknown event_type: " + eventTypeName);
-            return;
+            return reject(null, bankId, loanId, "unknown event_type: " + eventTypeName);
         }
 
-        Message message = Message.of(bankId, loanId, eventType);
+        Message message = new Message(bankId, loanId, eventType, messageId);
         if (!Banks.isValidId(bankId)) {
-            auditLog.write(eventType, message.messageId(), bankId, loanId, Outcome.PERMANENT_FAILURE);
+            auditLog.write(eventType, messageId, bankId, loanId, Outcome.PERMANENT_FAILURE);
             System.out.println("[TOPIC] Invalid bank_id: " + bankId + " — rejecting message");
-            return;
+            return Receipt.REJECTED;
+        }
+
+        if (!seenIds.firstSighting(messageId)) {
+            auditLog.write(eventType, messageId, bankId, loanId, Outcome.DUPLICATE);
+            System.out.println("[TOPIC] Already have message " + messageId + " — not processing it again");
+            return Receipt.DUPLICATE;
         }
 
         topic.publish(message);
+        return Receipt.ACCEPTED;
     }
 
-    private void reject(EventType eventType, String bankId, String loanId, String reason) {
+    /** A rejected message may have no usable id of its own, so its audit entry gets a new one. */
+    private Receipt reject(EventType eventType, String bankId, String loanId, String reason) {
         auditLog.write(eventType, UUID.randomUUID().toString(), bankId, loanId, Outcome.PERMANENT_FAILURE);
         System.out.println("[TOPIC] " + reason + " — rejecting message");
+        return Receipt.REJECTED;
     }
 }

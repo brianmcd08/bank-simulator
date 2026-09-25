@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.ExitCodeGenerator;
 import org.springframework.web.client.RestClient;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Sends every bank's sample messages once, each bank on its own thread, then returns. There is no web server in this
@@ -16,13 +17,15 @@ import org.springframework.web.client.RestClient;
 public class SendRun implements CommandLineRunner, ExitCodeGenerator {
 
     private final RestClient processorClient;
+    private final JsonMapper mapper;
     private final Duration firstWait;
 
     /** Written by every bank thread, read by main after the pool has closed. */
     private final AtomicInteger gaveUp = new AtomicInteger();
 
-    public SendRun(RestClient processorClient, Duration firstWait) {
+    public SendRun(RestClient processorClient, JsonMapper mapper, Duration firstWait) {
         this.processorClient = Objects.requireNonNull(processorClient, "processorClient");
+        this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.firstWait = Objects.requireNonNull(firstWait, "firstWait");
     }
 
@@ -32,7 +35,7 @@ public class SendRun implements CommandLineRunner, ExitCodeGenerator {
         // printed, not hidden in a Future. Bank.send no longer throws, so that should not happen.
         try (ExecutorService senders = Executors.newFixedThreadPool(SampleMessages.BY_BANK.size())) {
             SampleMessages.BY_BANK.forEach((id, messages) -> {
-                Bank bank = new Bank(id, processorClient, firstWait);
+                Bank bank = new Bank(id, processorClient, mapper, firstWait);
                 senders.execute(() -> messages.forEach(json -> {
                     if (!bank.send(json)) {
                         gaveUp.incrementAndGet();

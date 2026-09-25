@@ -21,6 +21,12 @@
       <artifactId>spring-boot-starter-restclient</artifactId>
     </dependency>
 
+    <!-- JsonMapper, to add the message id to each message. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-jackson</artifactId>
+    </dependency>
+
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>

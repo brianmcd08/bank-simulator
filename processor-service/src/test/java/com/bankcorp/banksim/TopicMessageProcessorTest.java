@@ -27,18 +27,19 @@ class TopicMessageProcessorTest {
         topic.registerQueue(positions, EventType.POSITION_UPDATE);
         topic.registerQueue(payments, EventType.PAYMENT);
         auditLog = new AuditLog();
-        processor = new TopicMessageProcessor(JsonMapper.shared(), topic, auditLog);
+        processor = new TopicMessageProcessor(JsonMapper.shared(), topic, auditLog, new SeenMessageIds());
     }
 
     @Test
     void validMessageIsPublishedToItsQueue() throws InterruptedException {
-        processor.process(SampleMessages.WF_POSITION);
+        assertEquals(Receipt.ACCEPTED, processor.process(SampleMessages.WF_POSITION));
 
         Message message = positions.poll(Duration.ofSeconds(1));
         assertNotNull(message);
         assertEquals("wf_1334566", message.bankId());
         assertEquals("loan_002", message.loanId());
         assertEquals(EventType.POSITION_UPDATE, message.eventType());
+        assertEquals("wf-1", message.messageId());
         assertEquals(0, payments.size());
         assertEquals(List.of(), auditLog.entries());
     }
@@ -55,7 +56,8 @@ class TopicMessageProcessorTest {
 
     @Test
     void unknownEventTypeIsAuditedWithoutOne() {
-        processor.process("{\"bank_id\": \"boa_9423213\", \"loan_id\": \"loan_001\", \"event_type\": \"REFUND\"}");
+        processor.process("{\"message_id\": \"m-1\", \"bank_id\": \"boa_9423213\", \"loan_id\": \"loan_001\", "
+                + "\"event_type\": \"REFUND\"}");
 
         AuditEntry entry = onlyRejection();
         assertEquals("boa_9423213", entry.bankId());
@@ -64,14 +66,16 @@ class TopicMessageProcessorTest {
 
     @Test
     void jsonNullIsAMissingFieldNotTheStringNull() {
-        processor.process("{\"bank_id\": \"boa_9423213\", \"loan_id\": null, \"event_type\": \"PAYMENT\"}");
+        processor.process("{\"message_id\": \"m-1\", \"bank_id\": \"boa_9423213\", \"loan_id\": null, "
+                + "\"event_type\": \"PAYMENT\"}");
 
         assertNull(onlyRejection().loanId());
     }
 
     @ParameterizedTest
     @ValueSource(strings = {
-        "{\"bank_id\": \"boa_9423213\", \"event_type\": \"PAYMENT\"}",
+        "{\"bank_id\": \"boa_9423213\", \"event_type\": \"PAYMENT\", \"message_id\": \"m-1\"}",
+        "{\"bank_id\": \"boa_9423213\", \"loan_id\": \"loan_001\", \"event_type\": \"PAYMENT\"}",
         "{\"bank_id\": null, \"loan_id\": \"loan_001\", \"event_type\": \"PAYMENT\"}",
         "{\"bank_id\": 42, \"loan_id\": \"loan_001\", \"event_type\": \"PAYMENT\"}",
         "{not json",
@@ -81,9 +85,32 @@ class TopicMessageProcessorTest {
         "[]"
     })
     void unusableInputIsRejected(String raw) {
-        processor.process(raw);
+        assertEquals(Receipt.REJECTED, processor.process(raw));
 
         onlyRejection();
+    }
+
+    @Test
+    void resendWithTheSameIdIsNotPublishedAgain() throws InterruptedException {
+        processor.process(SampleMessages.WF_POSITION);
+
+        assertEquals(Receipt.DUPLICATE, processor.process(SampleMessages.WF_POSITION));
+
+        assertNotNull(positions.poll(Duration.ofSeconds(1)));
+        assertEquals(0, positions.size());
+        AuditEntry entry = auditLog.entries().getFirst();
+        assertEquals(1, auditLog.entries().size());
+        assertEquals(Outcome.DUPLICATE, entry.outcome());
+        assertEquals("wf-1", entry.messageId());
+    }
+
+    @Test
+    void sameBankLoanAndTypeWithADifferentIdIsANewMessage() {
+        processor.process(SampleMessages.BOA_PAYMENT);
+
+        assertEquals(Receipt.ACCEPTED, processor.process(SampleMessages.BOA_PAYMENT_DUPLICATE));
+
+        assertEquals(2, payments.size());
     }
 
     private AuditEntry onlyRejection() {
