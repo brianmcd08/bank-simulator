@@ -90,8 +90,8 @@ the same time, so the order of audit entries also changes. That changes which en
 ## Microservices split
 
 The goal is three separately deployable services, each owning its own data and talking over HTTP or a real queue:
-`bank-service`, `processor-service` and `reconciliation-service`. It is built in slices, one commit each on the
-`microservices-split` branch.
+`bank-service`, `processor-service` and `reconciliation-service`. It was built in slices, one commit each: `f48110a`
+through `c77c863` on `main`.
 
 - Slice 0 (done): multi-module build; the processor runs as a web server.
 - Slice 1 (done): `bank-service` POSTs each message with `RestClient`, one thread per bank.
