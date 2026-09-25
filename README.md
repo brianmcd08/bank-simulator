@@ -9,12 +9,14 @@ looks for problems at the end.
 
 Needs Java 25 and Maven. Built on Spring Boot 4.1.
 
-The project is being split into separately deployable services (see "Microservices split" below). So far there is
-one module, `processor-service`, which runs as a web server on port 8081.
+The project is being split into separately deployable services (see "Microservices split" below). So far there are
+two modules: `processor-service`, a web server on port 8081, and `bank-service`, which sends the sample messages to
+it and exits.
 
 ```sh
 mvn test                                         # run every module's tests
 mvn -q -pl processor-service spring-boot:run     # start the processor; Ctrl+C stops it
+mvn -q -pl bank-service spring-boot:run          # send every bank's messages; exit code 1 if any were given up on
 
 curl -i -H 'Content-Type: application/json' \
   -d '{"bank_id":"wf_1334566","loan_id":"loan_002","event_type":"POSITION_UPDATE"}' \
@@ -84,5 +86,13 @@ The goal is three separately deployable services, each owning its own data and t
 `bank-service`, `processor-service` and `reconciliation-service`. It is built in slices, one commit each on the
 `microservices-split` branch.
 
-- Slice 0 (done): multi-module build; the processor runs as a web server. `Bank` and `SampleMessages` are parked in
-  the processor until the bank service exists.
+- Slice 0 (done): multi-module build; the processor runs as a web server.
+- Slice 1 (done): `bank-service` POSTs each message with `RestClient`, one thread per bank.
+  - If the processor cannot be reached, `Bank.send` retries up to 5 attempts, waiting 1, 2, 4 and 8 seconds, so it
+    rides out about 15 seconds of the processor being down. A reply with an error status is not retried.
+  - `send` never throws, so one failed message no longer ends the rest of that bank's sends.
+  - Messages given up on are counted, and the service exits with code 1 if there were any.
+  - Known limitations: each message rediscovers an outage on its own, so a bank with 4 messages spends about a
+    minute giving up. A message given up on is lost, and nothing downstream knows it was ever sent.
+- The services share no code. `Banks` exists in both; the processor's copy validates bank ids. `SampleMessages` is
+  the bank service's data and a test fixture in the processor.

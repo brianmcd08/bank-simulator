@@ -22,6 +22,7 @@
 
   <modules>
     <module>processor-service</module>
+    <module>bank-service</module>
   </modules>
 
   <properties>
