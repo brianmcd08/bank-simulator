@@ -1,3 +1,6 @@
+server:
+  port: 8081
+
 banksim:
   # Chance, from 0 to 1, that one processing attempt fails. Each message gets 3 attempts.
   position-failure-rate: 0.4
