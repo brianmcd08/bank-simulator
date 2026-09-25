@@ -3,11 +3,10 @@ package com.bankcorp.banksim;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -20,24 +19,27 @@ public class MessageController {
     private final AuditLog auditLog;
     private final DeadLetterQueue dlq;
     private final ReconciliationEngine reconciliationEngine;
+    private final ReplyChaos replyChaos;
 
     public MessageController(TopicMessageProcessor topicProcessor, AuditLog auditLog, DeadLetterQueue dlq,
-                             ReconciliationEngine reconciliationEngine) {
+                             ReconciliationEngine reconciliationEngine, ReplyChaos replyChaos) {
         this.topicProcessor = Objects.requireNonNull(topicProcessor, "topicProcessor");
         this.auditLog = Objects.requireNonNull(auditLog, "auditLog");
         this.dlq = Objects.requireNonNull(dlq, "dlq");
         this.reconciliationEngine = Objects.requireNonNull(reconciliationEngine, "reconciliationEngine");
+        this.replyChaos = Objects.requireNonNull(replyChaos, "replyChaos");
     }
 
     /**
-     * 202, not 200: the message is validated and queued here, but a queue processor thread handles it later, so its
-     * outcome does not exist yet when the reply goes back. A rejected message also gets 202, because process() does
-     * not report rejections.
+     * 202 for a new message: it is validated and queued here, but a queue processor thread handles it later, so its
+     * outcome does not exist yet when the reply goes back. 200 for a message id already seen: there is nothing left
+     * to do. A rejected message also gets 202 for now.
      */
     @PostMapping("/messages")
-    @ResponseStatus(HttpStatus.ACCEPTED)
-    public void receive(@RequestBody String json) {
-        topicProcessor.process(json);
+    public ResponseEntity<Void> receive(@RequestBody String json) {
+        Receipt receipt = topicProcessor.process(json);
+        replyChaos.afterProcessing(json);
+        return receipt == Receipt.DUPLICATE ? ResponseEntity.ok().build() : ResponseEntity.accepted().build();
     }
 
     @GetMapping("/audit")

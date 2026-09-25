@@ -28,12 +28,17 @@ final class ProcessorTestSupport {
     static void sendSampleMessages(int port) throws IOException, InterruptedException {
         List<String> all = SampleMessages.BY_BANK.values().stream().flatMap(List::stream).toList();
         for (String json : all) {
-            HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/messages"))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(json))
-                    .build();
-            assertEquals(202, CLIENT.send(request, HttpResponse.BodyHandlers.discarding()).statusCode());
+            assertEquals(202, post(port, json));
         }
+    }
+
+    /** POSTs one message and returns the status code of the reply. */
+    static int post(int port, String json) throws IOException, InterruptedException {
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/messages"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(json))
+                .build();
+        return CLIENT.send(request, HttpResponse.BodyHandlers.discarding()).statusCode();
     }
 
     /**

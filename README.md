@@ -19,8 +19,8 @@ mvn -q -pl processor-service spring-boot:run     # start the processor; Ctrl+C s
 mvn -q -pl bank-service spring-boot:run          # send every bank's messages; exit code 1 if any were given up on
 
 curl -i -H 'Content-Type: application/json' \
-  -d '{"bank_id":"wf_1334566","loan_id":"loan_002","event_type":"POSITION_UPDATE"}' \
-  localhost:8081/messages                        # 202 Accepted
+  -d '{"message_id":"m-1","bank_id":"wf_1334566","loan_id":"loan_002","event_type":"POSITION_UPDATE"}' \
+  localhost:8081/messages                        # 202 Accepted; the same message_id again gets 200
 curl -s localhost:8081/audit                     # also /dlq and /reconcile
 ```
 
@@ -36,8 +36,9 @@ POST /messages                        processor threads (1 per queue)
 ```
 
 - `POST /messages` returns 202 once the message is queued. A queue processor handles it afterwards, so the outcome
-  does not exist yet when the reply goes back. Rejected messages also get 202, because `process()` does not report
-  rejections.
+  does not exist yet when the reply goes back. Rejected messages also get 202 for now.
+- Every message must carry a `message_id`, created by the bank. A message whose id was already accepted is audited
+  as `DUPLICATE`, not processed again, and gets 200.
 - Tomcat's request threads and the queue processors run at the same time.
 - Shared state is the two queues (`LinkedBlockingQueue`), the audit log and the dead letter queue (both
   `synchronized`, readers get a copy), and the topic's routing map (built before any thread starts, then only read).
@@ -94,5 +95,19 @@ The goal is three separately deployable services, each owning its own data and t
   - Messages given up on are counted, and the service exits with code 1 if there were any.
   - Known limitations: each message rediscovers an outage on its own, so a bank with 4 messages spends about a
     minute giving up. A message given up on is lost, and nothing downstream knows it was ever sent.
+- Slice 2 (done): retries no longer process a message twice.
+  - The bank has a 2 second read timeout. With no reply, the processor may already have the message, so a retry
+    can deliver it twice (at-least-once delivery).
+  - Each message gets a `message_id` from the bank once, before the first attempt; every retry reuses it. The
+    processor remembers accepted ids (`SeenMessageIds`) and ignores a resend, so handling is idempotent.
+  - An id is not bank + loan + event type: `BOA_PAYMENT_DUPLICATE` is a genuine second payment with the same three
+    fields, and must not be dropped.
+  - `banksim.chaos.drop-first-reply-for-loan=loan_002` processes that loan's first message and holds the reply
+    past the bank's timeout, to show the resend on demand.
+  - Known limitations: the seen ids are in memory and never expire. A restarted processor, or a second copy of it,
+    would process a resend again, and the set grows forever. At scale they belong in a shared store (a unique
+    constraint in a database, or a key-value store with expiry), kept only as long as a resend can arrive: about
+    25 seconds for this bank's retry schedule. A 202
+    means the message is in an in-memory queue, not stored: a processor crash loses it and the bank will not resend.
 - The services share no code. `Banks` exists in both; the processor's copy validates bank ids. `SampleMessages` is
   the bank service's data and a test fixture in the processor.

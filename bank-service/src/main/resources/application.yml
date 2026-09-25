@@ -5,6 +5,10 @@ banksim:
   first-retry-wait: 1s
 
 spring:
+  http:
+    clients:
+      # Give up waiting for a reply after this long. Without it, a processor that never replies hangs the bank.
+      read-timeout: 2s
   main:
     banner-mode: off
     log-startup-info: false
