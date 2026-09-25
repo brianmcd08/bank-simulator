@@ -9,19 +9,21 @@ looks for problems at the end.
 
 Needs Java 25 and Maven. Built on Spring Boot 4.1.
 
-The project is being split into separately deployable services (see "Microservices split" below). So far there are
-two modules: `processor-service`, a web server on port 8081, and `bank-service`, which sends the sample messages to
-it and exits.
+The project is split into three separately deployable services (see "Microservices split" below):
+`processor-service` on port 8081, `reconciliation-service` on port 8082, and `bank-service`, which sends the sample
+messages to the processor and exits.
 
 ```sh
 mvn test                                         # run every module's tests
+mvn -q -pl reconciliation-service spring-boot:run   # start reconciliation; Ctrl+C stops it
 mvn -q -pl processor-service spring-boot:run     # start the processor; Ctrl+C stops it
 mvn -q -pl bank-service spring-boot:run          # send every bank's messages; exit code 1 if any were given up on
 
 curl -i -H 'Content-Type: application/json' \
   -d '{"message_id":"m-1","bank_id":"wf_1334566","loan_id":"loan_002","event_type":"POSITION_UPDATE"}' \
   localhost:8081/messages                        # 202 Accepted; the same message_id again gets 200
-curl -s localhost:8081/audit                     # also /dlq and /reconcile
+curl -s localhost:8081/audit                     # the processor's log; also /dlq
+curl -s localhost:8082/outcomes                  # reconciliation's copy; also /reconcile
 ```
 
 ## How it runs
@@ -45,7 +47,9 @@ POST /messages                        processor threads (1 per queue)
 - `PipelineLifecycle` starts the queue processor threads with the service and, at shutdown, puts `SQSQueue.POISON`
   on each queue and joins them. Its phase is just below the web server's, so the threads are running before the
   first request and the pills go in only after the server has stopped taking requests.
-- Reconciliation still runs in-process, on demand, through `GET /reconcile`.
+- Every audit entry except `DUPLICATE` is pushed to the reconciliation service by `OutcomePublisher`, on its own
+  thread, once (fire-and-forget). Accepted messages are audited `PENDING` first, so a message's outcomes arrive as
+  `PENDING`, then its final outcome.
 
 ## Spring Boot
 
@@ -78,8 +82,6 @@ With a 40% failure rate and 3 attempts, about 6% of POSITION messages reach the 
 the same time, so the order of audit entries also changes. That changes which entry reconciliation reports as
 "the duplicate" or as having a different outcome.
 
-"Stuck in pending" is kept from the Python version, but nothing writes `PENDING` to the audit log yet, so it never
-fires.
 
 ## Microservices split
 
@@ -109,5 +111,17 @@ The goal is three separately deployable services, each owning its own data and t
     constraint in a database, or a key-value store with expiry), kept only as long as a resend can arrive: about
     25 seconds for this bank's retry schedule. A 202
     means the message is in an in-memory queue, not stored: a processor crash loses it and the bank will not resend.
+- Slice 3 (done): reconciliation is its own service with its own copy of the outcomes.
+  - The processor pushes outcomes fire-and-forget: one attempt on a separate thread, so a slow or missing
+    reconciliation service never holds up message processing. A failed push is logged as `[PUSH] lost`.
+  - `OutcomeStore` keeps the latest state per message id. A final outcome replaces `PENDING`, and a late `PENDING`
+    never undoes a final outcome. Appending every event instead reported finished messages as stuck and flagged
+    `PENDING` then `SUCCESS` as different outcomes.
+  - Reconciliation's copy lags the processor's (eventual consistency). `banksim.pending-limit` (60s by default) is
+    how long a message may stay `PENDING` before it is reported as stuck.
+  - `banksim.chaos.processing-delay` holds each message before a queue processor handles it, to watch `PENDING`.
+  - Known limitations: an outcome pushed while reconciliation is down is lost for good, and reconciliation cannot
+    tell, so its report looks clean. Its store is in memory. `duplicateMessages` still keys on bank + loan + event
+    type, so it flags `BOA_PAYMENT_DUPLICATE`, a genuine second payment, for a person to check.
 - The services share no code. `Banks` exists in both; the processor's copy validates bank ids. `SampleMessages` is
   the bank service's data and a test fixture in the processor.

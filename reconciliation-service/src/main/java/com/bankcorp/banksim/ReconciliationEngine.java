@@ -12,28 +12,22 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * Looks through the audit log for problems after processing has finished. Runs on main once every other thread
- * has stopped, and each check works from its own snapshot of the log.
+ * Looks through this service's copy of the outcomes for problems. Each check works from its own snapshot of the
+ * store. The copy can be behind the processor's audit log, because events arrive over the network after the fact.
  */
 public class ReconciliationEngine {
-
-    static final Duration PENDING_LIMIT = Duration.ofSeconds(60);
 
     /** Identifies a message for duplicate detection. A record, so null fields hash and compare safely. */
     private record Key(String bankId, String loanId, EventType eventType) {}
 
-    private final AuditLog auditLog;
+    private final OutcomeStore store;
     private final Clock clock;
+    private final Duration pendingLimit;
 
-    public ReconciliationEngine(AuditLog auditLog, Clock clock) {
-        this.auditLog = Objects.requireNonNull(auditLog, "auditLog");
+    public ReconciliationEngine(OutcomeStore store, Clock clock, Duration pendingLimit) {
+        this.store = Objects.requireNonNull(store, "store");
         this.clock = Objects.requireNonNull(clock, "clock");
-    }
-
-    public void reconcile() {
-        reportFindings(diffOutcomesForSameLoan(), "Different outcomes for same loan");
-        reportFindings(duplicateMessages(), "Duplicate messages");
-        reportFindings(stuckInPending(), "Stuck in pending");
+        this.pendingLimit = Objects.requireNonNull(pendingLimit, "pendingLimit");
     }
 
     /**
@@ -43,7 +37,7 @@ public class ReconciliationEngine {
     public List<AuditEntry> diffOutcomesForSameLoan() {
         Map<String, Outcome> firstOutcome = new HashMap<>();
         List<AuditEntry> result = new ArrayList<>();
-        for (AuditEntry e : auditLog.entries()) {
+        for (AuditEntry e : store.entries()) {
             Outcome seen = firstOutcome.putIfAbsent(e.loanId(), e.outcome());
             if (seen != null && seen != e.outcome()) {
                 result.add(e);
@@ -56,7 +50,7 @@ public class ReconciliationEngine {
     public List<AuditEntry> duplicateMessages() {
         Set<Key> seen = new HashSet<>();
         List<AuditEntry> result = new ArrayList<>();
-        for (AuditEntry e : auditLog.entries()) {
+        for (AuditEntry e : store.entries()) {
             if (!seen.add(new Key(e.bankId(), e.loanId(), e.eventType()))) {
                 result.add(e);
             }
@@ -64,26 +58,16 @@ public class ReconciliationEngine {
         return result;
     }
 
-    /**
-     * PENDING entries older than the limit. Kept from the Python version even though nothing writes PENDING to the
-     * audit log yet, so in phase 1 this never finds anything.
-     */
+    /** PENDING entries older than the limit. */
     public List<AuditEntry> stuckInPending() {
         Instant now = clock.instant();
         List<AuditEntry> result = new ArrayList<>();
-        for (AuditEntry e : auditLog.entries()) {
+        for (AuditEntry e : store.entries()) {
             if (e.outcome() == Outcome.PENDING
-                    && Duration.between(e.timestamp(), now).compareTo(PENDING_LIMIT) > 0) {
+                    && Duration.between(e.timestamp(), now).compareTo(pendingLimit) > 0) {
                 result.add(e);
             }
         }
         return result;
-    }
-
-    private static void reportFindings(List<AuditEntry> entries, String problem) {
-        for (AuditEntry entry : entries) {
-            System.out.println("Problem: " + problem);
-            System.out.println(entry);
-        }
     }
 }
