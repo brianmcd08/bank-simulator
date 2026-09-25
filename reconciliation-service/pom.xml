@@ -10,21 +10,14 @@
     <version>0.1.0-SNAPSHOT</version>
   </parent>
 
-  <artifactId>processor-service</artifactId>
-  <name>processor-service</name>
-  <description>Receives bank messages over HTTP, routes them through the topic and queues, and audits outcomes.</description>
+  <artifactId>reconciliation-service</artifactId>
+  <name>reconciliation-service</name>
+  <description>Keeps its own copy of message outcomes, pushed by the processor, and looks for problems in it.</description>
 
   <dependencies>
-    <!-- Embedded Tomcat plus @RestController support. Brings Jackson 3 with it. -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-webmvc</artifactId>
-    </dependency>
-
-    <!-- RestClient, to push outcomes to the reconciliation service. -->
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-restclient</artifactId>
     </dependency>
 
     <dependency>
@@ -40,7 +33,7 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
         <configuration>
-          <mainClass>com.bankcorp.banksim.ProcessorApplication</mainClass>
+          <mainClass>com.bankcorp.banksim.ReconciliationApplication</mainClass>
         </configuration>
       </plugin>
     </plugins>

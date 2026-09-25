@@ -1,7 +1,6 @@
 package com.bankcorp.banksim;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,15 +17,13 @@ public class MessageController {
     private final TopicMessageProcessor topicProcessor;
     private final AuditLog auditLog;
     private final DeadLetterQueue dlq;
-    private final ReconciliationEngine reconciliationEngine;
     private final ReplyChaos replyChaos;
 
     public MessageController(TopicMessageProcessor topicProcessor, AuditLog auditLog, DeadLetterQueue dlq,
-                             ReconciliationEngine reconciliationEngine, ReplyChaos replyChaos) {
+                             ReplyChaos replyChaos) {
         this.topicProcessor = Objects.requireNonNull(topicProcessor, "topicProcessor");
         this.auditLog = Objects.requireNonNull(auditLog, "auditLog");
         this.dlq = Objects.requireNonNull(dlq, "dlq");
-        this.reconciliationEngine = Objects.requireNonNull(reconciliationEngine, "reconciliationEngine");
         this.replyChaos = Objects.requireNonNull(replyChaos, "replyChaos");
     }
 
@@ -50,14 +47,5 @@ public class MessageController {
     @GetMapping("/dlq")
     public List<Message> dlq() {
         return dlq.messages();
-    }
-
-    /** In-process until reconciliation becomes its own service. */
-    @GetMapping("/reconcile")
-    public Map<String, List<AuditEntry>> reconcile() {
-        return Map.of(
-                "differentOutcomesForSameLoan", reconciliationEngine.diffOutcomesForSameLoan(),
-                "duplicateMessages", reconciliationEngine.duplicateMessages(),
-                "stuckInPending", reconciliationEngine.stuckInPending());
     }
 }

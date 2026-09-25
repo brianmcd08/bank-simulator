@@ -1,0 +1,11 @@
+server:
+  port: 8082
+
+banksim:
+  # A message still PENDING after this long is reported as stuck.
+  pending-limit: 60s
+
+spring:
+  main:
+    banner-mode: off
+    log-startup-info: false

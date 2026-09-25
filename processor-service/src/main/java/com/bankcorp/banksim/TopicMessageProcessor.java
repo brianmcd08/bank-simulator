@@ -16,6 +16,7 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>The message id comes from the bank, which creates it once and sends the same id on every retry. A message whose
  * id was already accepted is audited as DUPLICATE and not published again, so a resend has no further effect.
+ * An accepted message is audited as PENDING; a queue processor writes its final outcome later.
  */
 public class TopicMessageProcessor {
 
@@ -69,6 +70,8 @@ public class TopicMessageProcessor {
             return Receipt.DUPLICATE;
         }
 
+        // PENDING goes in before the message is published, so it is always ahead of the final outcome in the log.
+        auditLog.write(eventType, messageId, bankId, loanId, Outcome.PENDING);
         topic.publish(message);
         return Receipt.ACCEPTED;
     }

@@ -10,13 +10,18 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param dropFirstReplyForLoan the first message for this loan id is processed, then its reply is held back for
  *                              {@code replyDelay}. A client whose read timeout is shorter never sees the reply.
  * @param replyDelay            how long to hold the reply back
+ * @param processingDelay       how long a queue processor holds each message before handling it, so it stays
+ *                              PENDING long enough to look at
  */
 @ConfigurationProperties("banksim.chaos")
-public record ChaosProperties(String dropFirstReplyForLoan, Duration replyDelay) {
+public record ChaosProperties(String dropFirstReplyForLoan, Duration replyDelay, Duration processingDelay) {
 
     public ChaosProperties {
         if (replyDelay == null) {
             replyDelay = Duration.ofSeconds(5);
+        }
+        if (processingDelay == null) {
+            processingDelay = Duration.ZERO;
         }
     }
 }

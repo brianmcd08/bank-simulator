@@ -41,7 +41,7 @@ class TopicMessageProcessorTest {
         assertEquals(EventType.POSITION_UPDATE, message.eventType());
         assertEquals("wf-1", message.messageId());
         assertEquals(0, payments.size());
-        assertEquals(List.of(), auditLog.entries());
+        assertEquals(List.of(Outcome.PENDING), auditLog.entries().stream().map(AuditEntry::outcome).toList());
     }
 
     @Test
@@ -98,10 +98,9 @@ class TopicMessageProcessorTest {
 
         assertNotNull(positions.poll(Duration.ofSeconds(1)));
         assertEquals(0, positions.size());
-        AuditEntry entry = auditLog.entries().getFirst();
-        assertEquals(1, auditLog.entries().size());
-        assertEquals(Outcome.DUPLICATE, entry.outcome());
-        assertEquals("wf-1", entry.messageId());
+        List<AuditEntry> entries = auditLog.entries();
+        assertEquals(List.of(Outcome.PENDING, Outcome.DUPLICATE), entries.stream().map(AuditEntry::outcome).toList());
+        assertEquals("wf-1", entries.getLast().messageId());
     }
 
     @Test

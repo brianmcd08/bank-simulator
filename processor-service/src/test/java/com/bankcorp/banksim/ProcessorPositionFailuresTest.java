@@ -12,7 +12,8 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 /** Every position update fails, so both reach the dead letter queue. */
 @SpringBootTest(
         webEnvironment = WebEnvironment.RANDOM_PORT,
-        properties = {"banksim.position-failure-rate=1", "banksim.payment-failure-rate=0"})
+        properties = {
+                "banksim.position-failure-rate=1", "banksim.payment-failure-rate=0", "banksim.reconciliation-url="})
 class ProcessorPositionFailuresTest {
 
     @LocalServerPort
@@ -27,10 +28,10 @@ class ProcessorPositionFailuresTest {
     @Test
     void positionUpdatesGoToTheDeadLetterQueue() throws Exception {
         ProcessorTestSupport.sendSampleMessages(port);
-        ProcessorTestSupport.awaitAuditEntries(auditLog, 8);
+        ProcessorTestSupport.awaitAuditEntries(auditLog, 13);
 
         assertEquals(
-                Map.of(Outcome.SUCCESS, 3, Outcome.PERMANENT_FAILURE, 3, Outcome.DLQ, 2),
+                Map.of(Outcome.PENDING, 5, Outcome.SUCCESS, 3, Outcome.PERMANENT_FAILURE, 3, Outcome.DLQ, 2),
                 ProcessorTestSupport.countByOutcome(auditLog));
         assertEquals(2, dlq.messages().size());
         dlq.messages().forEach(m -> assertEquals(EventType.POSITION_UPDATE, m.eventType()));

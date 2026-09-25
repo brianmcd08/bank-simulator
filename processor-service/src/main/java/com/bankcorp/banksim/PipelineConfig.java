@@ -1,9 +1,12 @@
 package com.bankcorp.banksim;
 
-import java.time.Clock;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.client.RestClient;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -17,9 +20,18 @@ import tools.jackson.databind.json.JsonMapper;
 @Configuration
 public class PipelineConfig {
 
+    /** With no reconciliation-url, outcomes stay in this service (the tests run this way). */
     @Bean
-    AuditLog auditLog() {
-        return new AuditLog();
+    AuditLog auditLog(ObjectProvider<OutcomePublisher> outcomePublisher) {
+        OutcomePublisher publisher = outcomePublisher.getIfAvailable();
+        return publisher == null ? new AuditLog() : new AuditLog(publisher);
+    }
+
+    @Bean
+    @ConditionalOnExpression("!'${banksim.reconciliation-url:}'.isBlank()")
+    OutcomePublisher outcomePublisher(RestClient.Builder builder,
+                                      @Value("${banksim.reconciliation-url}") String reconciliationUrl) {
+        return new OutcomePublisher(builder.baseUrl(reconciliationUrl).build());
     }
 
     @Bean
@@ -60,26 +72,18 @@ public class PipelineConfig {
 
     @Bean
     QueueMessageProcessor positionProcessor(@Qualifier("positionQueue") SQSQueue positionQueue,
-                                            SimulatorProperties properties, DeadLetterQueue dlq, AuditLog auditLog) {
-        return new QueueMessageProcessor(
-                positionQueue, FailurePolicy.randomRate(properties.positionFailureRate()), dlq, auditLog);
+                                            SimulatorProperties properties, ChaosProperties chaos,
+                                            DeadLetterQueue dlq, AuditLog auditLog) {
+        return new QueueMessageProcessor(positionQueue, FailurePolicy.randomRate(properties.positionFailureRate()),
+                dlq, auditLog, chaos.processingDelay());
     }
 
     @Bean
     QueueMessageProcessor paymentProcessor(@Qualifier("paymentQueue") SQSQueue paymentQueue,
-                                           SimulatorProperties properties, DeadLetterQueue dlq, AuditLog auditLog) {
-        return new QueueMessageProcessor(
-                paymentQueue, FailurePolicy.randomRate(properties.paymentFailureRate()), dlq, auditLog);
-    }
-
-    @Bean
-    Clock clock() {
-        return Clock.systemUTC();
-    }
-
-    @Bean
-    ReconciliationEngine reconciliationEngine(AuditLog auditLog, Clock clock) {
-        return new ReconciliationEngine(auditLog, clock);
+                                           SimulatorProperties properties, ChaosProperties chaos,
+                                           DeadLetterQueue dlq, AuditLog auditLog) {
+        return new QueueMessageProcessor(paymentQueue, FailurePolicy.randomRate(properties.paymentFailureRate()),
+                dlq, auditLog, chaos.processingDelay());
     }
 
     @Bean
