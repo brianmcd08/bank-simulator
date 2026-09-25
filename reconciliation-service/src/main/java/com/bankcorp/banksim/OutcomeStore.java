@@ -6,14 +6,15 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * This service's own copy of message outcomes, built from the events the processor pushes. It holds the latest state
+ * This service's own copy of message outcomes, built from the events the processor publishes. It holds the latest state
  * of each message, keyed by message id: a final outcome replaces PENDING, so a message that went PENDING and then
  * SUCCESS appears once, as SUCCESS.
  *
  * <p>A PENDING that arrives after a final outcome is ignored. The processor sends them in order, but nothing about a
  * network promises order, and a message that has finished must never look unfinished again.
  *
- * <p>Written by request threads, so every access holds the lock; readers get a copy.
+ * <p>Written by the listener thread and read by request threads, so every access holds the lock; readers get a
+ * copy.
  */
 public class OutcomeStore {
 

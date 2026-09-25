@@ -1,12 +1,12 @@
 package com.bankcorp.banksim;
 
+import org.springframework.amqp.core.DirectExchange;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.web.client.RestClient;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -20,7 +20,7 @@ import tools.jackson.databind.json.JsonMapper;
 @Configuration
 public class PipelineConfig {
 
-    /** With no reconciliation-url, outcomes stay in this service (the tests run this way). */
+    /** With banksim.publish-outcomes=false, outcomes stay in this service (the tests run this way). */
     @Bean
     AuditLog auditLog(ObjectProvider<OutcomePublisher> outcomePublisher) {
         OutcomePublisher publisher = outcomePublisher.getIfAvailable();
@@ -28,10 +28,15 @@ public class PipelineConfig {
     }
 
     @Bean
-    @ConditionalOnExpression("!'${banksim.reconciliation-url:}'.isBlank()")
-    OutcomePublisher outcomePublisher(RestClient.Builder builder,
-                                      @Value("${banksim.reconciliation-url}") String reconciliationUrl) {
-        return new OutcomePublisher(builder.baseUrl(reconciliationUrl).build());
+    @ConditionalOnProperty(name = "banksim.publish-outcomes", havingValue = "true", matchIfMissing = true)
+    OutcomePublisher outcomePublisher(RabbitTemplate rabbitTemplate, JsonMapper jsonMapper) {
+        return new OutcomePublisher(rabbitTemplate, jsonMapper);
+    }
+
+    /** Declared on the broker when the first connection opens; declaring one that already exists is harmless. */
+    @Bean
+    DirectExchange outcomesExchange() {
+        return new DirectExchange(OutcomePublisher.EXCHANGE);
     }
 
     @Bean

@@ -6,6 +6,15 @@ banksim:
   pending-limit: 60s
 
 spring:
+  rabbitmq:
+    host: localhost
+    port: 5672
+    listener:
+      simple:
+        # auto: Spring acknowledges after OutcomeListener.receive returns. If it throws, or this service dies first,
+        # the broker delivers the message again (at-least-once). OutcomeStore keeps one entry per message id, so a
+        # redelivery has no further effect. none would acknowledge on delivery and lose the message instead.
+        acknowledge-mode: auto
   main:
     banner-mode: off
     log-startup-info: false
